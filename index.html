@@ -456,7 +456,13 @@ class Du{
         if(h.st==='ko') continue;
         if(Math.abs(h.x-p.x)<70 && p.y>h.y-320 && p.y<h.y+40){
           p.hit=1; p.life=Math.min(p.life,p.t+14);   // 命中后很快消散
-          h.dizzy=54; h.shake=16; h.st='hurt'; h.t=0;
+          // ★ 霸体: 正在放龟派气功时, 投翔只让他晃一下, 绝不能打断光束。
+          //   (之前这里无条件 st='hurt', 会把 super2 状态顶掉 → 光束放不出来)
+          if(h.st==='super2'){
+            h.flash=.7; h.shake=Math.max(h.shake,12);
+          } else {
+            h.dizzy=54; h.shake=16; h.st='hurt'; h.t=0;
+          }
           game.hits.push({x:p.x,y:p.y,t:0,f:1,p:.5,blocked:1,poop:1});
           break;
         }
@@ -848,15 +854,19 @@ function stepPhase(){
       A1.x-=p*wa; B1.x+=p*wb;
     }
   }
-  // 英杰 ↔ 小杜的推挤: AI 完全不推(否则三人互相挤开, 永远贴不上去),
-  // 只有玩家会被推开一点。三人 AI 因此能停在同一区域并排站位。
+  // 英杰 ↔ 小杜的推挤
+  // ★ 上一版为了"并排站位"把 AI 这段整段禁掉了, 结果 AI 能走进小杜身体里 → 影分身重合。
+  //   正确做法: 【AI 之间不互推】(保并排), 但【AI 与小杜要推】——
+  //   推力全部作用在 AI 身上(小杜是沙包, 不该被推着跑), 把 AI 挡在小杜体表外。
   for(const h of HEROES){
     if(h.st==='ko') continue;
-    if(!h.isPlayer) continue;                 // AI 不参与这段推挤
-    const dx=DU.x-h.x, md=140;
+    const dx=DU.x-h.x;
+    // 小杜的体表半径: 立绘 120 宽, 半宽 60, 加上身位余量
+    const md=h.isPlayer?140:112;
     if(Math.abs(dx)<md){
       const s=(dx>=0?1:-1), p=(md-Math.abs(dx))*s;
-      h.x-=p*.85; DU.x+=p*.15;
+      if(h.isPlayer){ h.x-=p*.85; DU.x+=p*.15; }
+      else           { h.x-=p*1.0; }        // AI 全额退开, 小杜纹丝不动
     }
   }
   for(const h of HEROES){
