@@ -10,6 +10,37 @@
   #wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
   canvas{display:block;box-shadow:0 0 60px rgba(200,160,60,.18);border-radius:4px;touch-action:none}
   #hint{position:absolute;bottom:6px;width:100%;text-align:center;color:#6b5a44;font-size:12px;letter-spacing:1px;pointer-events:none}
+
+  /* ---- 手机触摸按钮: 独立屏幕层, 固定在底部左右两侧 ---- */
+  #pad{position:fixed;left:0;right:0;bottom:0;height:132px;pointer-events:none;z-index:20;
+       padding:0 18px calc(12px + env(safe-area-inset-bottom)) 18px;
+       display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
+  #pad .pb{pointer-events:auto;width:74px;height:74px;border-radius:50%;
+    background:rgba(46,30,18,.62);border:2px solid rgba(240,214,138,.55);
+    color:rgba(255,232,180,.95);font-size:27px;font-weight:600;
+    display:flex;align-items:center;justify-content:center;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+    touch-action:none;backdrop-filter:blur(3px);transition:background .08s,transform .08s}
+  #pad .pb.wide{font-size:24px}
+  #pad .pb.on{background:rgba(255,196,90,.88);color:#2a1608;transform:scale(.93);
+    border-color:rgba(255,240,200,.95);box-shadow:0 0 18px rgba(255,190,70,.55)}
+  #pad .pb:active{background:rgba(255,196,90,.78)}
+  /* 竖屏: 按钮淡出, 提示横屏 */
+  #pad.portrait{opacity:.28;pointer-events:none}
+  #pad.portrait .pb{pointer-events:none}
+  /* 竖屏提示遮罩 */
+  #rot{display:none;position:fixed;inset:0;z-index:60;background:rgba(8,5,12,.94);
+    align-items:center;justify-content:center;flex-direction:column;gap:18px;text-align:center;padding:20px}
+  #rot.show{display:flex}
+  #rot .ico{font-size:60px;animation:rot 1.8s ease-in-out infinite}
+  #rot .t1{color:#f0d68a;font-size:23px;letter-spacing:3px;font-weight:600}
+  #rot .t2{color:#9a8a6e;font-size:15px;letter-spacing:1px;line-height:1.9}
+  @keyframes rot{0%,100%{transform:rotate(0)}50%{transform:rotate(90deg)}}
+  @media (orientation:landscape) and (max-height:460px){
+    #pad{height:104px}
+    #pad .pb{width:64px;height:64px;font-size:24px}
+    #pad .pb.wide{font-size:21px}
+  }
   #load{position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:radial-gradient(ellipse at 50% 45%,#1b1221 0%,#0a070c 72%);transition:opacity .45s}
   #load.done{opacity:0;pointer-events:none}
   .ring{width:52px;height:52px;border-radius:50%;border:3px solid rgba(240,214,138,.16);border-top-color:#f0d68a;animation:spin 1s linear infinite}
@@ -23,6 +54,7 @@
 <body>
 <div id="wrap"><canvas id="cv" width="1280" height="720"></canvas></div>
 <div id="hint">按 1 / 2 / 3 选择你操控的英杰　　A/D 移动 · W 跳 · F 轻掌 · G 重掌</div>
+<div id="rot"><div class="ico">📱</div><div class="t1">请 横 屏 游 玩</div><div class="t2">横屏才能显示操作按钮<br>把手机转过来 ↻</div></div>
 <div id="load"><div class="ring"></div><div class="lt">正在加载</div><div class="lbar"><i id="lfill"></i></div><div class="ls">首次打开需要几秒，请稍候</div></div>
 <script>
 const IMG = {
@@ -36,12 +68,33 @@ const IMG = {
 };
 
 const W=1280,H=720,GROUND=600,FPS=60;
+// 触摸设备检测: 必须在 resize() 之前定义(resize 立刻被调用)
+const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+let G=null;                       // game 的前置引用, 避免 resize 早于 game 定义时出错
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+// 触摸设备检测(在脚本最前面已定义 isTouch, 这里兜底)
 function resize(){
-  const s=Math.min(innerWidth/W,(innerHeight-28)/H);
-  cv.style.width=(W*s)+'px'; cv.style.height=(H*s)+'px';
+  // 触摸模式下给底部按钮留 108px 空间, 否则留 28px 给提示文字
+  const pad = isTouch ? 150 : 28;   // 150 = 按钮层132 + 画布下边距18
+  const s = Math.min(innerWidth / W, (innerHeight - pad) / H);
+  cv.style.width  = (W * s) + 'px';
+  cv.style.height = (H * s) + 'px';
+  if(G) G.cs = s;               // 画布 CSS 缩放比, 触摸换算要用
 }
-addEventListener('resize',resize); resize();
+// 横屏/竖屏: 竖屏时显示"请横屏游玩"遮罩并禁用按钮
+function checkOrient(){
+  const portrait = innerHeight > innerWidth;
+  const rot=document.getElementById('rot');
+  if(rot) rot.classList.toggle('show', portrait && isTouch);
+  if(padEl) padEl.classList.toggle('portrait', portrait);
+  resize();
+}
+// 触摸模式隐藏底部提示条(会被按钮层盖住, 键盘提示对手机用户无意义)
+const hintEl=document.getElementById('hint');
+if(hintEl) hintEl.style.display=isTouch?'none':'block';
+addEventListener('resize',checkOrient);
+addEventListener('orientationchange',()=>setTimeout(checkOrient,120));
+resize();
 
 /* ---------- 资源烘焙 ---------- */
 function bake(img,h,noOutline){
@@ -687,7 +740,7 @@ function readInput(){
   inp.up   = !!keys[PMAP.u+'_p'] || !!t.j;
   inp.atkL = !!keys[PMAP.l2+'_p'] || t.f===1;
   inp.atkH = !!keys[PMAP.h2+'_p'] || t.g===1;
-  inp.sup2 = !!keys[PMAP.s2+'_p'];
+  inp.sup2 = !!keys[PMAP.s2+'_p'] || t.q===1;   // T 键 或 屏幕"气"键
   return inp;
 }
 // 单挑 P2: 方向键 + J/K/L
@@ -811,6 +864,7 @@ var game={
 var HEROES=[ new Fighter('yan','闫祖'), new Fighter('liu','刘祖'), new Fighter('wu','吴祖') ];
 var DU=new Du();
 var DUEL=[HEROES[0],HEROES[1]];   // 单挑: 肯爷爷 vs 刘祖
+G=game;                             // 供 resize() 早期调用
 
 function stepPhase(){
   if(game.state==='ready'){
@@ -1262,12 +1316,16 @@ function render(){
     ctx.fillStyle='rgba(216,201,168,.7)';
     ctx.fillText('按 空格 返回标题',W/2,440);
   }
-  if(game.state!=='over'&&game.state!=='title') drawTouch();
+  // 触摸按钮改为【独立的屏幕按钮层】(按钮DOM), 不再画在画布里
+  // 原因: 手机上画布会被压得很小, 画布内坐标的按钮会点不到
+  if(isTouch) layoutPad(); else drawTouch();
 }
 function drawTouch(){
+  // 桌面端理论上不会走到这里(isTouch=false)。保留以防万一。
   ctx.save(); ctx.textAlign='center';
   for(const b of BTN){
     const on=touch.p1[b.k];
+    // 气键没气时置灰提示
     ctx.globalAlpha=on?1:.62;
     ctx.fillStyle=on?'rgba(255,226,150,.92)':'rgba(60,40,22,.55)';
     ctx.strokeStyle='rgba(240,214,138,.75)'; ctx.lineWidth=2;
@@ -1465,13 +1523,57 @@ function drawTitle(){
 }
 
 /* ---------- 触摸 ---------- */
+// ★ 触摸按钮。坐标是游戏内 1280x720 的逻辑坐标, 事件里会按画布缩放比换算。
+//   布局按【手机横屏单手拇指可达】设计: 底部两侧, 按钮加大到 96px 防误触。
 const BTN=[
-  {k:'l',x:40,y:560,w:86,h:86,lab:'◀'},
-  {k:'r',x:142,y:560,w:86,h:86,lab:'▶'},
-  {k:'j',x:196,y:462,w:86,h:86,lab:'跳'},
-  {k:'f',x:1130,y:462,w:86,h:86,lab:'掌'},
-  {k:'g',x:1130,y:560,w:86,h:86,lab:'重'}
+  // 左侧: 移动 + 跳
+  {k:'l', x:28,  y:596,w:96,h:96,lab:'◀'},
+  {k:'r', x:140, y:596,w:96,h:96,lab:'▶'},
+  {k:'j', x:250, y:470,w:88,h:88,lab:'跳'},
+  // 右侧: 攻击 + 龟派气功
+  {k:'f', x:1156,y:596,w:96,h:96,lab:'掌'},
+  {k:'g', x:1046,y:596,w:96,h:96,lab:'重'},
+  {k:'q', x:1156,y:470,w:96,h:96,lab:'气'}   // ★ 龟派气功
 ];
+/* ---------- 触摸按钮: 独立屏幕层 ----------
+   为什么不用画布内坐标: 手机上画布按比例缩放后可能只有 200 多像素高,
+   画布内 y=596 的按钮换算到屏幕就在可视区之外, 点不到。
+   所以按钮改用【屏幕像素】定位, 固定在屏幕底部左右两侧, 永远可点。 */
+const PAD_HTML='<div id="pad">'+
+  '<div class="pb" data-k="l">◀</div>'+
+  '<div class="pb" data-k="r">▶</div>'+
+  '<div class="pb" data-k="j">跳</div>'+
+  '<div class="pb" data-k="g">重</div>'+
+  '<div class="pb" data-k="f">掌</div>'+
+  '<div class="pb wide" data-k="q">气</div>'+
+  '</div>';
+let padEl=null, padBtns=[];
+function layoutPad(){
+  if(!padEl) return;
+  padEl.classList.toggle('portrait', innerHeight > innerWidth);
+}
+function initPad(){
+  if(!isTouch || padEl) return;
+  document.body.insertAdjacentHTML('beforeend', PAD_HTML);
+  padEl=document.getElementById('pad');
+  padBtns=[...padEl.querySelectorAll('.pb')];
+  const press=(k,on)=>{
+    touch.p1[k]=on?1:0;
+    if(k==='f')touch.p1.f=on?1:0;
+    if(k==='g')touch.p1.g=on?1:0;
+    if(k==='q')touch.p1.q=on?1:0;
+    padBtns.forEach(b=>b.classList.toggle('on', b.dataset.k===k&&on));
+  };
+  // 用 pointer 事件统一处理手指/鼠标, 且支持多点(左右手同时按)
+  padBtns.forEach(b=>{
+    const k=b.dataset.k;
+    b.addEventListener('pointerdown',e=>{ e.preventDefault(); b.setPointerCapture&&b.setPointerCapture(e.pointerId); press(k,true); });
+    b.addEventListener('pointerup',  e=>{ e.preventDefault(); press(k,false); });
+    b.addEventListener('pointercancel',e=>{ e.preventDefault(); press(k,false); });
+    b.addEventListener('pointerleave',e=>{ e.preventDefault(); press(k,false); });
+    b.addEventListener('contextmenu',e=>e.preventDefault());
+  });
+}
 let activeT={};
 function tStart(ev){
   if(game.state!=='fight') return;
@@ -1498,7 +1600,12 @@ cv.addEventListener('touchend',tEnd,{passive:false});
 cv.addEventListener('touchcancel',tEnd,{passive:false});
 
 /* ---------- 主循环 ---------- */
-function start(){ window.__G={game,HEROES,DU,DUEL,A}; requestAnimationFrame(loop); }
+function start(){
+  initPad();                       // 触摸设备才创建按钮层
+  checkOrient();                   // 判定横竖屏
+  window.__G={game,HEROES,DU,DUEL,A,isTouch,padEl:()=>padEl};
+  requestAnimationFrame(loop);
+}
 var last=0, acc=0;
 function loop(t){
   requestAnimationFrame(loop);
